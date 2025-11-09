@@ -1,7 +1,7 @@
 # app.py
 # SWOT → Problem Statements → Project Charters (S2C)
 # Streamlit + OpenAI (Chat Completions)
-# Now auto-connects via environment variable or Streamlit secrets (no input field).
+# Sidebar now includes API Status, Model selector, and Temperature slider.
 
 import os
 import io
@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 from typing import List
 
-# ---------------- OpenAI client (same pattern as TRIZ app) ----------------
+# ---------------- OpenAI client (same pattern as TRIZ) ----------------
 try:
     from openai import OpenAI
     OPENAI_IMPORT_OK = True
@@ -38,9 +38,9 @@ def get_openai_client():
 
 client = get_openai_client()
 
-# ---------------- Page & minimal styles ----------------
+# ---------------- Page Config ----------------
+st.set_page_config(page_title="SWOT → Problem Statements → Project Charters (S2C)", layout="wide")
 APP_TITLE = "SWOT → Problem Statements → Project Charters (S2C)"
-MODEL_NAME_DEFAULT = "gpt-4o-mini"   # swap to gpt-4o / gpt-4.1 if desired
 DMAIC_DEPARTMENTS = [
     "Sales Ops","Service Ops","Finance Ops","Procurement","IT","QA",
     "Compliance","Supply Chain","Manufacturing","Shared Services","Training","PMO"
@@ -53,10 +53,9 @@ ORG_TIERS = [
     "Operational Tier (Staff, Associates, Technicians, Entry-Level Employees)",
 ]
 
-st.set_page_config(page_title=APP_TITLE, layout="wide")
-
-# ---------------- Sidebar: API badge only ----------------
+# ---------------- Sidebar ----------------
 with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/9077/9077538.png", width=40)
     st.markdown("### API Status")
     if client is None:
         st.markdown(
@@ -82,16 +81,11 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-# ---------------- Main UI ----------------
-st.title(APP_TITLE)
-st.caption("OpenAI-powered DMAIC portfolio generator — optional Organizational Tier alignment")
+    st.markdown("---")
+    st.markdown("### Model Settings")
 
-# Model & temperature (dropdown selector)
-top1, top2 = st.columns([2,1])
-with top1:
-    st.markdown("**Model**")
     model_name = st.selectbox(
-        "",
+        "Select Model",
         options=[
             "gpt-4o-mini",
             "gpt-4o",
@@ -102,8 +96,13 @@ with top1:
         index=0,
         help="Select which OpenAI model to use for analysis"
     )
-with top2:
+
     temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.05)
+    st.caption("Lower = more consistent, Higher = more creative")
+
+# ---------------- Main UI ----------------
+st.title(APP_TITLE)
+st.caption("OpenAI-powered DMAIC portfolio generator — optional Organizational Tier alignment")
 
 # Context
 st.markdown("#### Context")
@@ -147,7 +146,7 @@ with d:
 
 st.markdown("---")
 
-# ---------------- Prompt templates ----------------
+# ---------------- Prompt Templates ----------------
 SYSTEM_TEXT = textwrap.dedent("""
 You are an AI Lean Six Sigma Black Belt coach. You ingest SWOT sticky notes (70–100 items), cluster them by theme, and produce:
 1) a Theme Map per quadrant,
@@ -234,7 +233,8 @@ def build_user_prompt() -> str:
         tier_guidance=tier_guidance
     )
 
-# ---------------- OpenAI call ----------------
+
+# ---------------- OpenAI Call ----------------
 def call_openai(system_text: str, user_text: str, model_name: str, temperature: float) -> str:
     if client is None:
         return "⚠️ OpenAI client not initialized. Add your API key in Secrets or env."
@@ -251,7 +251,7 @@ def call_openai(system_text: str, user_text: str, model_name: str, temperature: 
     except Exception as e:
         return f"⚠️ Error generating response: {e}"
 
-# ---------------- Helpers ----------------
+
 def extract_csv_block(text: str) -> str:
     if not text:
         return ""
@@ -265,6 +265,7 @@ def extract_csv_block(text: str) -> str:
             idx = text.index(header)
             return text[idx:].split("\n\n")[0].strip()
     return ""
+
 
 # ---------------- Actions ----------------
 left, right = st.columns([1,1])
