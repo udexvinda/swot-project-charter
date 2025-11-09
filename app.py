@@ -86,10 +86,22 @@ with st.sidebar:
 st.title(APP_TITLE)
 st.caption("OpenAI-powered DMAIC portfolio generator — optional Organizational Tier alignment")
 
-# Model & temperature (no API key input anymore)
+# Model & temperature (dropdown selector)
 top1, top2 = st.columns([2,1])
 with top1:
-    model_name = st.text_input("Model", value=MODEL_NAME_DEFAULT)
+    st.markdown("**Model**")
+    model_name = st.selectbox(
+        "",
+        options=[
+            "gpt-4o-mini",
+            "gpt-4o",
+            "gpt-4.1-mini",
+            "gpt-4.1",
+            "gpt-3.5-turbo",
+        ],
+        index=0,
+        help="Select which OpenAI model to use for analysis"
+    )
 with top2:
     temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.05)
 
@@ -300,3 +312,4 @@ with st.expander("Show System Instruction"):
     st.code(SYSTEM_TEXT)
 with st.expander("Show Composed User Prompt"):
     st.code(build_user_prompt())
+
