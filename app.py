@@ -1,24 +1,50 @@
 # app.py
 # SWOT → Problem Statements → Project Charters (S2C)
 # Streamlit + OpenAI (Chat Completions)
-# Sidebar shows ONLY an API status badge as requested.
+# Now auto-connects via environment variable or Streamlit secrets (no input field).
 
 import os
 import io
 import textwrap
 import pandas as pd
 import streamlit as st
+from typing import List
 
-# --- OpenAI client (python >=1.0 SDK) ---
+# ---------------- OpenAI client (same pattern as TRIZ app) ----------------
 try:
     from openai import OpenAI
-    OPENAI_OK = True
+    OPENAI_IMPORT_OK = True
 except Exception:
-    OPENAI_OK = False
+    OPENAI_IMPORT_OK = False
 
+
+@st.cache_resource
+def get_openai_client():
+    """Initialize OpenAI client from Streamlit Secrets or environment variable."""
+    if not OPENAI_IMPORT_OK:
+        return None
+    api_key = (
+        st.secrets.get("openai", {}).get("api_key")
+        if "openai" in st.secrets
+        else os.getenv("OPENAI_API_KEY", "")
+    )
+    if not api_key:
+        return None
+    try:
+        return OpenAI(api_key=api_key)
+    except Exception:
+        return None
+
+
+client = get_openai_client()
+
+# ---------------- Page & minimal styles ----------------
 APP_TITLE = "SWOT → Problem Statements → Project Charters (S2C)"
-MODEL_NAME_DEFAULT = "gpt-4o-mini"   # fast & cost-effective; change if you like
-
+MODEL_NAME_DEFAULT = "gpt-4o-mini"   # swap to gpt-4o / gpt-4.1 if desired
+DMAIC_DEPARTMENTS = [
+    "Sales Ops","Service Ops","Finance Ops","Procurement","IT","QA",
+    "Compliance","Supply Chain","Manufacturing","Shared Services","Training","PMO"
+]
 ORG_TIERS = [
     "Executive Tier (CEO, COO, CFO, CTO, President)",
     "Senior Management Tier (Vice Presidents, Directors, General Managers)",
@@ -26,16 +52,26 @@ ORG_TIERS = [
     "Supervisory Tier (Supervisors, Shift Leaders, Coordinators)",
     "Operational Tier (Staff, Associates, Technicians, Entry-Level Employees)",
 ]
-DMAIC_DEPARTMENTS = [
-    "Sales Ops","Service Ops","Finance Ops","Procurement","IT","QA",
-    "Compliance","Supply Chain","Manufacturing","Shared Services","Training","PMO"
-]
 
-# ---------------- Sidebar: API status only ----------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
+
+# ---------------- Sidebar: API badge only ----------------
 with st.sidebar:
     st.markdown("### API Status")
-    if os.getenv("OPENAI_API_KEY"):
+    if client is None:
+        st.markdown(
+            """
+            <div style="background-color:#FDEDEC;padding:10px;border-radius:6px;
+                        border:1px solid #F5B7B1;font-weight:600;color:#C0392B;">
+              ❌ OpenAI: Not Connected
+            </div>
+            <div style="font-size:0.9em;margin-top:6px;">
+              Add <code>[openai] api_key</code> in <b>Secrets</b> or set <code>OPENAI_API_KEY</code>.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
         st.markdown(
             """
             <div style="background-color:#E9F7EF;padding:10px;border-radius:6px;
@@ -45,46 +81,32 @@ with st.sidebar:
             """,
             unsafe_allow_html=True,
         )
-    else:
-        st.markdown(
-            """
-            <div style="background-color:#FDEDEC;padding:10px;border-radius:6px;
-                        border:1px solid #F5B7B1;font-weight:600;color:#C0392B;">
-              ❌ OpenAI: Not Connected
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
 
 # ---------------- Main UI ----------------
 st.title(APP_TITLE)
-st.caption("OpenAI-powered DMAIC portfolio generator with optional Organizational Tier alignment")
+st.caption("OpenAI-powered DMAIC portfolio generator — optional Organizational Tier alignment")
 
-# Model & runtime controls (now on main page)
-mcol1, mcol2, mcol3 = st.columns([1,1,1])
-with mcol1:
+# Model & temperature (no API key input anymore)
+top1, top2 = st.columns([2,1])
+with top1:
     model_name = st.text_input("Model", value=MODEL_NAME_DEFAULT)
-with mcol2:
+with top2:
     temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.05)
-with mcol3:
-    key_present = bool(os.getenv("OPENAI_API_KEY"))
-    st.text_input("OPENAI_API_KEY (optional override)", type="password",
-                  placeholder="Use env var if blank")
 
 # Context
 st.markdown("#### Context")
-cc1, cc2, cc3 = st.columns(3)
-with cc1:
+c1, c2, c3 = st.columns(3)
+with c1:
     region = st.text_input("Region/Market (optional)", value="APAC")
-with cc2:
+with c2:
     industry = st.text_input("Industry (optional)", value="Shared Services")
-with cc3:
+with c3:
     fy_start = st.text_input("Fiscal Year start (e.g., Jan 1)", value="Jan 1")
 
-# Organizational Tiers (kept on main page)
+# Organizational tiers
 st.markdown("#### Organizational Tier (optional)")
 include_tiers = st.checkbox("Include Organizational Tier(s) in charters & portfolio", True)
-tiers_selected = []
+tiers_selected: List[str] = []
 if include_tiers:
     tiers_selected = st.multiselect(
         "Select relevant tiers (ordered high → low in governance)",
@@ -95,19 +117,19 @@ if include_tiers:
 st.markdown("---")
 
 # SWOT inputs
-c1, c2 = st.columns(2)
-with c1:
+a, b = st.columns(2)
+with a:
     st.subheader("Strengths (one per line)")
     strengths_text = st.text_area("Strengths", height=160, label_visibility="collapsed")
-with c2:
+with b:
     st.subheader("Weaknesses (one per line)")
     weaknesses_text = st.text_area("Weaknesses", height=160, label_visibility="collapsed")
 
-c3, c4 = st.columns(2)
-with c3:
+c, d = st.columns(2)
+with c:
     st.subheader("Opportunities (one per line)")
     opportunities_text = st.text_area("Opportunities", height=160, label_visibility="collapsed")
-with c4:
+with d:
     st.subheader("Threats (one per line)")
     threats_text = st.text_area("Threats", height=160, label_visibility="collapsed")
 
@@ -173,7 +195,8 @@ Output format:
 {tier_guidance}
 """).strip()
 
-def build_user_prompt():
+
+def build_user_prompt() -> str:
     tier_block_instruction = ""
     tier_col_hint = ""
     tier_guidance = ""
@@ -199,40 +222,36 @@ def build_user_prompt():
         tier_guidance=tier_guidance
     )
 
-def call_openai(system_text, user_text, model_name, temperature):
-    if not OPENAI_OK:
-        return "**[Local Preview]** OpenAI SDK not installed. Showing composed prompt:\n\n" + user_text
-    api_key = os.getenv("OPENAI_API_KEY", "")
-    if not api_key:
-        return "**[Local Preview]** OPENAI_API_KEY not set. Showing composed prompt:\n\n" + user_text
-    client = OpenAI(api_key=api_key)
-    resp = client.chat.completions.create(
-        model=model_name,
-        temperature=temperature,
-        messages=[
-            {"role": "system", "content": system_text},
-            {"role": "user", "content": user_text}
-        ],
-    )
-    return resp.choices[0].message.content
+# ---------------- OpenAI call ----------------
+def call_openai(system_text: str, user_text: str, model_name: str, temperature: float) -> str:
+    if client is None:
+        return "⚠️ OpenAI client not initialized. Add your API key in Secrets or env."
+    try:
+        resp = client.chat.completions.create(
+            model=model_name,
+            temperature=temperature,
+            messages=[
+                {"role": "system", "content": system_text},
+                {"role": "user", "content": user_text},
+            ],
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        return f"⚠️ Error generating response: {e}"
 
+# ---------------- Helpers ----------------
 def extract_csv_block(text: str) -> str:
-    """Grab a CSV-looking block from the LLM output."""
     if not text:
         return ""
     lines = text.splitlines()
-    starts = [
+    for header in [
         "Problem_ID,Theme,Impact,Control,Impact×Control,Savings_Band,Duration,Dept(s),Proposed_Start,Org_Tier(s)",
         "Problem_ID,Theme,Impact,Control,Savings_Band,Duration,Dept(s),Proposed_Start,Org_Tier(s)",
         "Problem_ID,Theme,Impact,Control,Savings_Band,Duration,Dept(s),Proposed_Start",
-    ]
-    block = "\n".join(lines)
-    for header in starts:
-        if header in block:
-            ix = block.index(header)
-            tail = block[ix:]
-            part = tail.split("\n\n")[0]
-            return part.strip()
+    ]:
+        if header in text:
+            idx = text.index(header)
+            return text[idx:].split("\n\n")[0].strip()
     return ""
 
 # ---------------- Actions ----------------
